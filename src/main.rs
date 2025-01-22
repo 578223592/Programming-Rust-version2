@@ -1,26 +1,86 @@
-use std::i64;
+use actix_web::{get, post, route, web, App, HttpResponse, HttpServer, Responder};
 use std::str::FromStr;
 
-fn add(x: i32, y: i32) -> i32 {
-    x+y
+#[get("/hello/{name}")]
+async fn greet(name: web::Path<String>) -> impl Responder {
+    format!("Hello {}!", name)
 }
 
-// cargo run 123 456
-fn main() {
-    let mut vec = Vec::new();
-    for x in std::env::args().skip(1) {
-        let i = i64::from_str(&x).expect("from str err");
-        vec.push(i);
-    }
-
-    for it in vec {
-        println!("{}",it)
-    }
+#[tokio::main]
+async fn main() {
+    let server = HttpServer::new(|| {
+        App::new()
+            .route("/", web::get().to(get_index))
+            .route("/gcd", web::post().to(post_gcd))
+    });
+    println!("Serving on http://localhost:3000...");
+    server
+        .bind("127.0.0.1:3000")
+        .expect("error binding server to address")
+        .run()
+        .await
+        .expect("some bad happened")
 }
 
+async fn get_index() -> HttpResponse {
+    HttpResponse::Ok().content_type("text/html").body(
+        r#"
+<title>GCD Calculator</title>
+<form action="/gcd" method="post">
+<input type="text" name="n"/>
+<input type="text" name="m"/>
+<button type="submit">Compute GCD</button>
+</form>
+"#,
+    )
+}
+
+#[derive(serde::Deserialize)]
+struct GcdParameters {
+    n: u64,
+    m: u64,
+}
+
+async fn post_gcd(form: web::Form<GcdParameters>) -> HttpResponse {
+    if form.n == 0 || form.m == 0 {
+        return HttpResponse::BadRequest()
+            .content_type("text/html")
+            .body("Computing the GCD with zero is boring.");
+    }
+    let response = format!(
+        "The greatest common divisor of the numbers {} and {} \
+is <b>{}</b>\n",
+        form.n,
+        form.m,
+        gcd(form.n, form.m)
+    );
+    HttpResponse::Ok().content_type("text/html").body(response)
+}
+fn gcd(mut n: u64, mut m: u64) -> u64 {
+    assert!(n != 0 && m != 0);
+    while m != 0 {
+        if m < n {
+            let t = m;
+            m = n;
+            n = t;
+        }
+        m = m % n;
+    }
+    n
+}
+
+fn parse_pair<T: FromStr>(s: &str, separator: char) -> Option<(T, T)> {
+    match s.find(separator) {
+        Some(i) => match (T::from_str(&s[..i]) , s[i + 1..].parse()) {
+            (Ok(l), Ok(r)) => Some((l, r)),
+            _ => None,
+        },
+        _ => None,
+    }
+}
 
 #[test]
-fn test_add(){
-    assert_eq!(add(1,2),3);
-    assert_eq!(add(1,2),4);
+fn test_parse_pair() {
+    assert_eq!(parse_pair::<i32>("", ','), None);
+    assert_eq!(parse_pair::<i32>("10,10", ','), Some((10, 10)));
 }
